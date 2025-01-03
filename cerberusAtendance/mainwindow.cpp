@@ -104,7 +104,7 @@ void MainWindow::registrarEstudiante()
     if (estudianteYaRegistrado(idIngresado)) {
         // Preguntar al usuario si desea registrar nuevamente
         QMessageBox::StandardButton reply;
-        reply = QMessageBox::question(this, "Registro Duplicado",
+        reply = QMessageBox::warning(this, "Registro Duplicado",
                                       "El estudiante ya ha registrado su entrada anteriormente. ¿Desea registrar nuevamente?",
                                       QMessageBox::Yes | QMessageBox::No);
 
