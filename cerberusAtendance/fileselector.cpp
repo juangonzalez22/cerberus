@@ -9,6 +9,10 @@ fileSelector::fileSelector(QWidget *parent) :
     ui(new Ui::fileSelector)
 {
     ui->setupUi(this);
+        setWindowTitle("Velvet Attendance Setup");
+
+    ui->dbLineEdit->setReadOnly(true);
+    ui->attendanceLineEdit->setReadOnly(true);
 
     // Conectar los botones con las funciones correspondientes
     connect(ui->dbButton, &QPushButton::clicked, this, &fileSelector::seleccionarBaseDeDatos);

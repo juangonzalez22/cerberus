@@ -63,7 +63,8 @@ void MainWindow::cargarBaseDeDatos(const QString &fileName)
     QFile file(fileName);
     if (!file.open(QIODevice::ReadOnly)) {
         QMessageBox::warning(this, "Error", "No se pudo abrir el archivo.");
-        return;
+        QApplication::quit();  // Cerrar la aplicación si no se puede abrir el archivo
+        return;  // Terminar la ejecución de la función
     }
 
     QTextStream in(&file);
@@ -85,6 +86,7 @@ void MainWindow::cargarBaseDeDatos(const QString &fileName)
 
     file.close();
 }
+
 
 
 bool MainWindow::estudianteYaRegistrado(const QString &idIngresado)
