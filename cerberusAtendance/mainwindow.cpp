@@ -5,30 +5,37 @@
 #include <QFileDialog>
 #include <QTableWidgetItem>
 #include <QMap>
+#include <QApplication>
+#include <QTimer>
 
-MainWindow::MainWindow(QWidget *parent) :
+MainWindow::MainWindow(const QString &databaseFile, const QString &attendanceFile, QWidget *parent) :
     QMainWindow(parent),
-    ui(new Ui::MainWindow)
+    ui(new Ui::MainWindow),
+    databaseFile(databaseFile),  // Guardar el archivo de base de datos
+    attendanceFile(attendanceFile)  // Guardar el archivo de asistencia
 {
     ui->setupUi(this);
+    setWindowTitle("Velvet Attendance");
+
+
+    // Verificamos si el archivo de base de datos fue seleccionado
+    cargarBaseDeDatos(databaseFile);  // Cargar la base de datos de estudiantes
 
     // Configurar la tabla cuando se inicie la interfaz
     configurarTabla();
 
-    // Conectar el botón para seleccionar base de datos
-    connect(ui->selectDatabaseButton, &QPushButton::clicked, this, &MainWindow::seleccionarBaseDeDatos);
-
     // Conectar el campo de texto para registrar un estudiante al presionar enter
     connect(ui->idLineEdit, &QLineEdit::returnPressed, this, &MainWindow::registrarEstudiante);
 
-    // Conectar el botón para eliminar todos los registros.
+    // Conectar el botón para eliminar todos los registros
     connect(ui->cleanButton, &QPushButton::clicked, this, &MainWindow::limpiarRegistros);
 
-    // Conectar el botón para exportar registros
-    connect(ui->exportButton, &QPushButton::clicked, this, &MainWindow::exportarRegistros);
-
-    //Conectar el botón para limpiar el último registro
+    // Conectar el botón para limpiar el último registro
     connect(ui->deleteLastButton, &QPushButton::clicked, this, &MainWindow::eliminarUltimoRegistro);
+
+    QTimer *timer = new QTimer(this);
+    connect(timer, &QTimer::timeout, this, &MainWindow::actualizarReloj);
+    timer->start(1000);
 }
 
 MainWindow::~MainWindow()
@@ -38,26 +45,18 @@ MainWindow::~MainWindow()
 
 void MainWindow::configurarTabla()
 {
-    // Establecer el número de columnas (ya lo hemos hecho antes)
     ui->tableRegist->setColumnCount(4); // ID, Nombre, Grupo, Hora de llegada
-
-    // Establecer los encabezados
     QStringList headers;
     headers << "ID" << "Nombre" << "Grupo" << "Hora de Llegada";
     ui->tableRegist->setHorizontalHeaderLabels(headers);
 
-    // Ajustar el ancho de las columnas
-    ui->tableRegist->setColumnWidth(0, 100);  // Columna de ID
-    ui->tableRegist->setColumnWidth(1, 200);  // Columna de Nombre
-    ui->tableRegist->setColumnWidth(2, 100);  // Columna de Grupo
-    ui->tableRegist->setColumnWidth(3, 150);  // Columna de Hora de llegada
-
-    // Opcional: establecer el comportamiento para que las columnas se ajusten al contenido si es necesario
+    ui->tableRegist->setColumnWidth(0, 100);
+    ui->tableRegist->setColumnWidth(1, 200);
+    ui->tableRegist->setColumnWidth(2, 100);
+    ui->tableRegist->setColumnWidth(3, 150);
     ui->tableRegist->horizontalHeader()->setSectionResizeMode(QHeaderView::Fixed);
-
     ui->tableRegist->setEditTriggers(QAbstractItemView::NoEditTriggers);
 }
-
 
 void MainWindow::cargarBaseDeDatos(const QString &fileName)
 {
@@ -72,19 +71,21 @@ void MainWindow::cargarBaseDeDatos(const QString &fileName)
         QString line = in.readLine();
         QStringList fields = line.split(',');
 
-        // Asegúrate de que cada línea tenga los tres campos necesarios
+        // Verificar que tenga exactamente tres campos
         if (fields.size() == 3) {
-            QString id = fields[0];
-            QString nombre = fields[1];
-            QString grupo = fields[2];
+            QString id = fields[0].trimmed();
+            QString nombre = fields[1].trimmed();
+            QString grupo = fields[2].trimmed();
 
-            // Guardamos los datos en el QMap
-            estudiantes[id] = QStringList() << nombre << grupo;
+            if (!id.isEmpty() && !nombre.isEmpty() && !grupo.isEmpty()) {
+                estudiantes[id] = QStringList() << nombre << grupo;
+            }
         }
     }
 
     file.close();
 }
+
 
 bool MainWindow::estudianteYaRegistrado(const QString &idIngresado)
 {
@@ -105,8 +106,8 @@ void MainWindow::registrarEstudiante()
         // Preguntar al usuario si desea registrar nuevamente
         QMessageBox::StandardButton reply;
         reply = QMessageBox::warning(this, "Registro Duplicado",
-                                      "El estudiante ya ha registrado su entrada anteriormente. ¿Desea registrar nuevamente?",
-                                      QMessageBox::Yes | QMessageBox::No);
+                                     "El estudiante ya ha registrado su entrada anteriormente. ¿Desea registrar nuevamente?",
+                                     QMessageBox::Yes | QMessageBox::No);
 
         if (reply == QMessageBox::No) {
             ui->idLineEdit->clear();  // Limpiar el campo de texto
@@ -114,61 +115,89 @@ void MainWindow::registrarEstudiante()
         }
     }
 
-    // Si el estudiante no está registrado o el usuario eligió registrar nuevamente
+    // Verificar si el estudiante existe en la base de datos
+    if (!estudiantes.contains(idIngresado)) {
+        QMessageBox::warning(this, "Error", "Estudiante no encontrado.");
+        ui->idLabel->setText("ID: ");
+        ui->nameLabel->setText("Nombre: ");
+        ui->groupLabel->setText("Grupo: ");
+        ui->idLineEdit->clear();  // Limpiar el campo de texto
+        return;  // Detener la ejecución si el ID no se encuentra
+    }
+
+    // Si el estudiante existe, obtener sus datos
+    QStringList datosEstudiante = estudiantes[idIngresado];
+    QString nombre = datosEstudiante[0];
+    QString grupo = datosEstudiante[1];
+
+    // Actualizar las etiquetas con los datos del estudiante
+    ui->idLabel->setText("ID: " + idIngresado);
+    ui->nameLabel->setText("Nombre: " + nombre);
+    ui->groupLabel->setText("Grupo: " + grupo);
+
+    // Registrar el estudiante en la tabla
     buscarEstudiantePorID(idIngresado);
     ui->idLineEdit->clear();  // Limpiar el campo de texto después de registrar
+
+    // Registrar en el archivo CSV de asistencia en tiempo real
+    QFile file(attendanceFile);
+    if (file.open(QIODevice::Append)) {
+        QTextStream out(&file);
+        QString currentTime = QDateTime::currentDateTime().toString();
+
+        // Escribir los datos del registro (ID, Nombre, Grupo, Hora de Llegada)
+        out << idIngresado << ","
+            << nombre << ","
+            << grupo << ","
+            << currentTime << "\n";
+
+        file.close();
+    } else {
+        QMessageBox::warning(this, "Error", "No se pudo escribir en el archivo de asistencia.");
+    }
 }
-void MainWindow::buscarEstudiantePorID(const QString& idIngresado)
+
+
+
+
+void MainWindow::buscarEstudiantePorID(const QString &idIngresado)
 {
     if (estudiantes.contains(idIngresado)) {
         QStringList datosEstudiante = estudiantes[idIngresado];
-        QString nombre = datosEstudiante[0];
-        QString grupo = datosEstudiante[1];
+        qDebug() << "ID encontrado:" << idIngresado << ", Tamaño de la lista:" << datosEstudiante.size();
 
-        // Mostrar los datos en la tabla
-        int row = ui->tableRegist->rowCount();
-        ui->tableRegist->insertRow(row);
-        ui->tableRegist->setItem(row, 0, new QTableWidgetItem(idIngresado));
-        ui->tableRegist->setItem(row, 1, new QTableWidgetItem(nombre));
-        ui->tableRegist->setItem(row, 2, new QTableWidgetItem(grupo));
-        ui->tableRegist->setItem(row, 3, new QTableWidgetItem(QDateTime::currentDateTime().toString()));
-    } else {
-        QMessageBox::warning(this, "Error", "Estudiante no encontrado.");
-    }
-}
+        if (datosEstudiante.size() >= 2) {
+            QString nombre = datosEstudiante[0];
+            QString grupo = datosEstudiante[1];
 
-void MainWindow::exportarRegistros()
-{
-    // Abrir el cuadro de diálogo para seleccionar la ubicación y el nombre del archivo
-    QString fileName = QFileDialog::getSaveFileName(this, "Guardar archivo CSV", "", "Archivos CSV (*.csv)");
-
-    // Verificar que el usuario haya seleccionado un nombre de archivo
-    if (fileName.isEmpty()) {
-        return;  // Si no se seleccionó archivo, simplemente salimos
-    }
-
-    // Abrir el archivo seleccionado para escribir
-    QFile file(fileName);
-    if (file.open(QIODevice::WriteOnly)) {
-        QTextStream out(&file);
-        out << "ID,Nombre,Grupo,Hora de Llegada\n";
-        // Escribir los datos de la tabla en el archivo CSV
-        for (int i = 0; i < ui->tableRegist->rowCount(); ++i) {
-            out << ui->tableRegist->item(i, 0)->text() << ","
-                << ui->tableRegist->item(i, 1)->text() << ","
-                << ui->tableRegist->item(i, 2)->text() << ","
-                << ui->tableRegist->item(i, 3)->text() << "\n";
+            // Mostrar los datos en la tabla
+            int row = ui->tableRegist->rowCount();
+            ui->tableRegist->insertRow(row);
+            ui->tableRegist->setItem(row, 0, new QTableWidgetItem(idIngresado));
+            ui->tableRegist->setItem(row, 1, new QTableWidgetItem(nombre));
+            ui->tableRegist->setItem(row, 2, new QTableWidgetItem(grupo));
+            ui->tableRegist->setItem(row, 3, new QTableWidgetItem(QDateTime::currentDateTime().toString()));
+        } else {
+            QMessageBox::warning(this, "Error", "Los datos del estudiante están incompletos.");
         }
-
-        file.close();
-        QMessageBox::information(this, "Éxito", "Registros exportados correctamente.");
     } else {
-        QMessageBox::warning(this, "Error", "No se pudo guardar el archivo.");
+        qDebug() << "ID no encontrado:" << idIngresado;
+        QMessageBox::warning(this, "Error", "Estudiante no encontrado.");
+        return;  // Detener la ejecución si el ID no se encuentra
     }
 }
 
 
-// Función para limpiar todos los registros de la tabla con confirmación
+
+
+
+void MainWindow::actualizarReloj()
+{
+    // Actualizar el reloj en el label
+    QString timeString = QTime::currentTime().toString("hh:mm:ss");
+    ui->clockLabel->setText(timeString);
+}
+
 void MainWindow::limpiarRegistros()
 {
     // Mostrar mensaje de confirmación
@@ -180,26 +209,63 @@ void MainWindow::limpiarRegistros()
     if (reply == QMessageBox::Yes) {
         int rows = ui->tableRegist->rowCount();
         for (int i = rows - 1; i >= 0; --i) {
-            ui->tableRegist->removeRow(i);  // Eliminar la fila
+            ui->tableRegist->removeRow(i);  // Eliminar la fila de la tabla
+        }
+
+        ui->idLabel->setText("ID: ");
+        ui->nameLabel->setText("Nombre: ");
+        ui->groupLabel->setText("Grupo: ");
+
+        // Ahora, actualizamos el archivo CSV para eliminar todos los registros
+        QFile file(attendanceFile);
+        if (file.open(QIODevice::WriteOnly)) {
+            QTextStream out(&file);
+            // Escribir solo el encabezado
+            out << "ID,Nombre,Grupo,Hora de Llegada\n";
+            file.close();
         }
     }
 }
 
-void MainWindow::seleccionarBaseDeDatos()
-{
-    QString fileName = QFileDialog::getOpenFileName(this, "Seleccionar archivo CSV", "", "Archivos CSV (*.csv)");
-    if (!fileName.isEmpty()) {
-        cargarBaseDeDatos(fileName);
-        ui->fileLabel->setText(fileName);  // Mostrar el nombre del archivo seleccionado en el label
-    }
-}
 
 void MainWindow::eliminarUltimoRegistro()
 {
     int rowCount = ui->tableRegist->rowCount();
     if (rowCount > 0) {
-        ui->tableRegist->removeRow(rowCount - 1);  // Eliminar la última fila
+        // Eliminar la última fila de la tabla
+        ui->tableRegist->removeRow(rowCount - 1);
+        ui->idLabel->setText("ID: ");
+        ui->nameLabel->setText("Nombre: ");
+        ui->groupLabel->setText("Grupo: ");
+
+
+        // Ahora, actualizamos el archivo CSV para eliminar el último registro
+        QFile file(attendanceFile);
+        if (file.open(QIODevice::ReadWrite)) {
+            QTextStream in(&file);
+            QStringList lines;
+
+            // Leer todas las líneas del archivo
+            while (!in.atEnd()) {
+                lines.append(in.readLine());
+            }
+
+            // Eliminar la última línea (sin el encabezado)
+            if (lines.size() > 1) {  // Si hay más de solo el encabezado
+                lines.removeLast();  // Eliminar la última línea
+            }
+
+            // Volver a escribir el archivo sin el último registro
+            file.resize(0);  // Limpiar el contenido del archivo
+            QTextStream out(&file);
+            for (const QString& line : lines) {
+                out << line << "\n";  // Escribir las líneas restantes en el archivo
+            }
+
+            file.close();
+        }
     } else {
         QMessageBox::warning(this, "Advertencia", "No hay registros para eliminar.");
     }
 }
+
