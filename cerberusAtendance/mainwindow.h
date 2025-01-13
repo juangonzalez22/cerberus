@@ -23,10 +23,8 @@ public:
     ~MainWindow();
 
 private slots:
-    void onFilesSelected(const QString &dbPath, const QString &attendancePath);
     void registrarEstudiante();
     void limpiarRegistros();
-    void seleccionarBaseDeDatos();
     void eliminarUltimoRegistro();
     void actualizarReloj();
 
